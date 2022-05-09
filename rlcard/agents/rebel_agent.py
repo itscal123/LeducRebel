@@ -15,16 +15,28 @@ from rlcard.utils.utils import *
 Transition = namedtuple('Transition', ['state', 'action', 'reward', 'next_state', 'legal_actions', 'done'])
 
 class RebelAgent():
-    ''' Implement CFR (chance sampling) algorithm
+    ''' 
+    Implement CFR (chance sampling) algorithm
     '''
 
-    def __init__(self,
-                 env, model_path='./rebel_model', 
-                 num_actions=2):
-        ''' Initilize Agent
-
-        Args:
-            env (Env): Env class
+    def __init__(
+        self, env, model_path='./rebel_model', 
+        num_actions=2, 
+        learning_rate=3e-4, 
+        state_shape=None,
+        mlp_layers=None, 
+        device=None):
+        '''
+        Initilize Agent
+        ------------
+        args:
+            env: Env object
+            model_path: str
+            num_actions (int): number of actions
+            learning_rate (float): learning rate of the value/policy networks
+            state_shape (list): list of the space of the state vector
+            mlp_layers (list): layer number and dimension of each layer in the network
+            device (torch device): whether to use CPU or GPU
         '''
         self.use_raw = False
         self.env = env
@@ -40,8 +52,26 @@ class RebelAgent():
 
         # Initialize value/policy networks
         self.valueNetwork = Estimator(
-            num_actions=num_actions, learning_rate=learning_rate, state_shape=state_shape, mlp_layers=mlp_layers, device=self.device)
+            num_actions=num_actions, 
+            learning_rate=learning_rate, 
+            state_shape=state_shape, 
+            mlp_layers=mlp_layers, 
+            device=self.device
+        )
+
+        self.policyNetwork = Estimator(
+            num_actions=num_actions, 
+            learning_rate=learning_rate, 
+            state_shape=state_shape, 
+            mlp_layers=mlp_layers, 
+            device=self.device
+        )
+
+        # Create replay memory
+        self.memory = Memory(replay_memory_size, batch_size)    
+
         self.iteration = 0
+
 
     def train(self):
         ''' Do one iteration of CFR
