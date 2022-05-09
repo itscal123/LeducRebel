@@ -21,7 +21,9 @@ class RebelAgent():
 
     def __init__(
         self, env, model_path='./rebel_model', 
-        num_actions=2, 
+        replay_memory_size=20000,
+        batch_size=32,
+        num_actions=None, 
         learning_rate=3e-4, 
         state_shape=None,
         mlp_layers=None, 
@@ -39,9 +41,12 @@ class RebelAgent():
             device (torch device): whether to use CPU or GPU
         '''
         self.use_raw = False
+        self.num_actions = num_actions or env.num_actions
         self.env = env
         self.model_path = model_path
         self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+        self.state_shape = state_shape or env.state_shape[0]
+        self.mlp_layers= mlp_layers or [64, 64]
 
         # A policy is a dict state_str -> action probabilities
         self.policy = collections.defaultdict(list)
@@ -52,18 +57,18 @@ class RebelAgent():
 
         # Initialize value/policy networks
         self.valueNetwork = Estimator(
-            num_actions=num_actions, 
+            num_actions=self.num_actions, 
             learning_rate=learning_rate, 
-            state_shape=state_shape, 
-            mlp_layers=mlp_layers, 
+            state_shape=self.state_shape, 
+            mlp_layers=self.mlp_layers, 
             device=self.device
         )
 
         self.policyNetwork = Estimator(
-            num_actions=num_actions, 
+            num_actions=self.num_actions, 
             learning_rate=learning_rate, 
-            state_shape=state_shape, 
-            mlp_layers=mlp_layers, 
+            state_shape=self.state_shape, 
+            mlp_layers=self.mlp_layers, 
             device=self.device
         )
 
