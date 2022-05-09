@@ -18,7 +18,9 @@ class RebelAgent():
     ''' Implement CFR (chance sampling) algorithm
     '''
 
-    def __init__(self, env, model_path='./rebel_model'):
+    def __init__(self,
+                 env, model_path='./rebel_model', 
+                 num_actions=2):
         ''' Initilize Agent
 
         Args:
@@ -37,7 +39,8 @@ class RebelAgent():
         self.regrets = collections.defaultdict(np.array)
 
         # Initialize value/policy networks
-        self.valueNetwork = Estimator
+        self.valueNetwork = Estimator(
+            num_actions=num_actions, learning_rate=learning_rate, state_shape=state_shape, mlp_layers=mlp_layers, device=self.device)
         self.iteration = 0
 
     def train(self):
