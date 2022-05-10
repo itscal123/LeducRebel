@@ -152,11 +152,7 @@ class RebelAgent():
         for ts in trajectories[0]:
             self.feed(ts)
         
-        while not self.env.is_over():
-
-            break
-        #    subgame = constructSubGame  # TODO
-        #    # TODO: Initialize/implement policy networks
+        
 
 
     def feed(self, ts):
@@ -398,25 +394,6 @@ class RebelAgent():
             action_probs = policy[obs]
         action_probs = remove_illegal(action_probs, legal_actions)
         return action_probs
-
-
-    def eval_step2(self, state):
-        ''' Given a state, predict action based on average policy
-
-        Args:
-            state (numpy.array): State representation
-
-        Returns:
-            action (int): Predicted action
-            info (dict): A dictionary containing information
-        '''
-        probs = self.action_probs(state['obs'].tostring(), list(state['legal_actions'].keys()), self.average_policy)
-        action = np.random.choice(len(probs), p=probs)
-
-        info = {}
-        info['probs'] = {state['raw_legal_actions'][i]: float(probs[list(state['legal_actions'].keys())[i]]) for i in range(len(state['legal_actions']))}
-
-        return action, info
 
 
     def get_state(self, player_id):
