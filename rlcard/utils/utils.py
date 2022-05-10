@@ -236,7 +236,7 @@ def plot_curve(csv_path, save_path, algorithm):
             ys.append(float(row['reward']))
         fig, ax = plt.subplots()
         ax.plot(xs, ys, label=algorithm)
-        ax.set(xlabel='timestep', ylabel='reward')
+        ax.set(xlabel='Timestep', ylabel='Reward')
         ax.legend()
         ax.grid()
 
