@@ -22,7 +22,12 @@ class RebelAgent():
     def __init__(
         self, env, model_path='./rebel_model', 
         replay_memory_size=20000,
+        discount_factor=0.99,
         batch_size=32,
+        update_policy_every=1000,
+        epsilon_start=1.0,
+        epsilon_end=0.1,
+        epsilon_decay_steps=20000,
         num_actions=None, 
         learning_rate=3e-4, 
         state_shape=None,
@@ -47,6 +52,19 @@ class RebelAgent():
         self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
         self.state_shape = state_shape or env.state_shape[0]
         self.mlp_layers= mlp_layers or [64, 64]
+        self.epsilon_decay_steps = epsilon_decay_steps
+        self.batch_size = batch_size
+        self.discount_factor
+        self.update_policy_every = update_policy_every
+
+        # Total timesteps
+        self.total_t = 0
+
+        # Total training step
+        self.train_t = 0
+
+        # The epsilon decay scheduler
+        self.epsilons = np.linspace(epsilon_start, epsilon_end, epsilon_decay_steps)
 
         # A policy is a dict state_str -> action probabilities
         self.policy = collections.defaultdict(list)
@@ -77,7 +95,7 @@ class RebelAgent():
 
         self.iteration = 0
 
-
+    # TODO: rename
     def train(self):
         ''' Do one iteration of CFR
         '''
@@ -93,7 +111,7 @@ class RebelAgent():
         self.update_policy()
 
 
-    # TODO: Implement Rebel Logic from paper
+    # TODO: Implement Rebel Logic from paper and rename
     def train2(self):
         """
         Rebel algorithm for RL and Search for Imperfect-Information Games
@@ -116,8 +134,146 @@ class RebelAgent():
                 Add {β, π_bar(β)} to D_π 
             βr ← βr′
         """
-        while not self.env.is_over():
-            subgame = constructSubGame  # TODO
+        #while not self.env.is_over():
+        #    subgame = constructSubGame  # TODO
+        #    # TODO: Initialize/implement policy networks
+
+
+    def feed(self, ts):
+        ''' 
+        Store data in to replay buffer and train the agent. There are two stages.
+        In stage 1, populate the memory without training
+        In stage 2, train the agent every several timesteps
+
+        Args:
+            ts (list): a list of 5 elements that represent the transition
+        '''
+        (state, action, reward, next_state, done) = tuple(ts)
+        self.feed_memory(state['obs'], action, reward, next_state['obs'], list(next_state['legal_actions'].keys()), done)
+        self.total_t += 1
+        tmp = self.total_t - self.replay_memory_init_size
+        if tmp>=0 and tmp%self.train_every == 0:
+            self.trainValueNetwork()
+
+
+    def step(self, state):
+        ''' 
+        Predict the action for genrating training data but
+        have the predictions disconnected from the computation graph
+
+        Args:
+            state (numpy.array): current state
+
+        Returns:
+            action (int): an action id
+        '''
+        values = self.predict(state)
+        epsilon = self.epsilons[min(self.total_t, self.epsilon_decay_steps-1)]
+        legal_actions = list(state['legal_actions'].keys())
+        probs = np.ones(len(legal_actions), dtype=float) * epsilon / len(legal_actions)
+        best_action_idx = legal_actions.index(np.argmax(values))
+        probs[best_action_idx] += (1.0 - epsilon)
+        action_idx = np.random.choice(np.arange(len(probs)), p=probs)
+
+        return legal_actions[action_idx]
+
+
+    def eval_step(self, state):
+        '''
+        Predict the action for evaluation purpose.
+
+        Args:
+            state (numpy.array): current state
+
+        Returns:
+            action (int): an action id
+            info (dict): A dictionary containing information
+        '''
+        values = self.predict(state)
+        best_action = np.argmax(values)
+
+        info = {}
+        info['values'] = {state['raw_legal_actions'][i]: float(values[list(state['legal_actions'].keys())[i]]) for i in range(len(state['legal_actions']))}
+
+        return best_action, info
+
+
+    def predict(self, state):
+        '''
+        Predict the masked values
+
+        Args:
+            state (numpy.array): current state
+
+        Returns:
+            values (numpy.array): a 1-d array where each entry represents a Q value
+        '''
+        
+        values = self.valueNetwork.predict_nograd(np.expand_dims(state['obs'], 0))[0]
+        masked_values = -np.inf * np.ones(self.num_actions, dtype=float)
+        legal_actions = list(state['legal_actions'].keys())
+        masked_values[legal_actions] = values[legal_actions]
+
+        return masked_values
+
+
+    def trainValueNetwork(self):
+        '''
+        Train the value network
+
+        Returns:
+            loss (float): The loss of the current batch.
+        '''
+        state_batch, action_batch, reward_batch, next_state_batch, legal_actions_batch, done_batch = self.memory.sample()
+
+        # Calculate best next actions using value network
+        values_next = self.valueNetwork.predict_nograd(next_state_batch)
+        legal_actions = []
+        for b in range(self.batch_size):
+            legal_actions.extend([i + b * self.num_actions for i in legal_actions_batch[b]])
+        masked_values = -np.inf * np.ones(self.num_actions * self.batch_size, dtype=float)
+        masked_values[legal_actions] = values_next.flatten()[legal_actions]
+        masked_values = masked_values.reshape((self.batch_size, self.num_actions))
+        best_actions = np.argmax(masked_values, axis=1)
+
+        # Evaluate best next actions using policy network
+        values_next_target = self.policyNetwork.predict_nograd(next_state_batch)
+        target_batch = reward_batch + np.invert(done_batch).astype(np.float32) * \
+            self.discount_factor * values_next_target[np.arange(self.batch_size), best_actions]
+
+        # Perform gradient descent update
+        state_batch = np.array(state_batch)
+
+        loss = self.valueNetwork.update(state_batch, action_batch, target_batch)
+        print('\rINFO - Step {}, rl-loss: {}'.format(self.total_t, loss), end='')
+
+        # Update the policy network
+        if self.train_t % self.update_policy_every == 0:
+            self.policyNetwork = deepcopy(self.valueNetwork)
+            print("\nINFO - Copied model parameters to target network.")
+
+        self.train_t += 1
+
+
+    def feed_memory(self, state, action, reward, next_state, legal_actions, done):
+        '''
+        Feed transition to memory
+
+        Args:
+            state (numpy.array): the current state
+            action (int): the performed action ID
+            reward (float): the reward received
+            next_state (numpy.array): the next state after performing the action
+            legal_actions (list): the legal actions of the next state
+            done (boolean): whether the episode is finished
+        '''
+        self.memory.save(state, action, reward, next_state, legal_actions, done)
+
+
+    def set_device(self, device):
+        self.device = device
+        self.valueNetwork.device = device
+        self.policyNetwork.device = device
 
 
     def traverse_tree(self, probs, player_id):
@@ -299,11 +455,8 @@ class RebelAgent():
 
 class Estimator(object):
     '''
-    Approximate clone of rlcard.agents.dqn_agent.Estimator that
-    uses PyTorch instead of Tensorflow.  All methods input/output np.ndarray.
-
     Estimator neural network.
-    This network is used for both the value network and the policy network.
+    This network is used for both the value network and the policy network. All methods input/output np.ndarray.
     '''
 
     def __init__(self, num_actions=2, learning_rate=0.001, state_shape=None, mlp_layers=None, device=None):
@@ -321,14 +474,14 @@ class Estimator(object):
         self.mlp_layers = mlp_layers
         self.device = device
 
-        # set up Q model and place it in eval mode
-        qnet = EstimatorNetwork(num_actions, state_shape, mlp_layers)
-        qnet = qnet.to(self.device)
-        self.qnet = qnet
-        self.qnet.eval()
+        # set up estimator model and place it in eval mode
+        model = EstimatorNetwork(num_actions, state_shape, mlp_layers)
+        model = model.to(self.device)
+        self.model = model
+        self.model.eval()
 
         # initialize the weights using Xavier init
-        for p in self.qnet.parameters():
+        for p in self.model.parameters():
             if len(p.data.shape) > 1:
                 nn.init.xavier_uniform_(p.data)
 
@@ -336,12 +489,12 @@ class Estimator(object):
         self.mse_loss = nn.MSELoss(reduction='mean')
 
         # set up optimizer
-        self.optimizer =  torch.optim.Adam(self.qnet.parameters(), lr=self.learning_rate)
+        self.optimizer =  torch.optim.Adam(self.model.parameters(), lr=self.learning_rate)
 
     def predict_nograd(self, s):
         ''' Predicts action values, but prediction is not included
             in the computation graph.  It is used to predict optimal next
-            actions in the Double-DQN algorithm.
+            actions.
 
         Args:
           s (np.ndarray): (batch, state_len)
@@ -352,14 +505,11 @@ class Estimator(object):
         '''
         with torch.no_grad():
             s = torch.from_numpy(s).float().to(self.device)
-            q_as = self.qnet(s).cpu().numpy()
-        return q_as
+            model_as = self.model(s).cpu().numpy()
+        return model_as
 
     def update(self, s, a, y):
         ''' Updates the estimator towards the given targets.
-            In this case y is the target-network estimated
-            value of the Q-network optimal actions, which
-            is labeled y in Algorithm 1 of Minh et al. (2015)
 
         Args:
           s (np.ndarray): (batch, state_shape) state representation
@@ -371,25 +521,25 @@ class Estimator(object):
         '''
         self.optimizer.zero_grad()
 
-        self.qnet.train()
+        self.model.train()
 
         s = torch.from_numpy(s).float().to(self.device)
         a = torch.from_numpy(a).long().to(self.device)
         y = torch.from_numpy(y).float().to(self.device)
 
         # (batch, state_shape) -> (batch, num_actions)
-        q_as = self.qnet(s)
+        model_as = self.model(s)
 
         # (batch, num_actions) -> (batch, )
-        Q = torch.gather(q_as, dim=-1, index=a.unsqueeze(-1)).squeeze(-1)
+        actions = torch.gather(model_as, dim=-1, index=a.unsqueeze(-1)).squeeze(-1)
 
         # update model
-        batch_loss = self.mse_loss(Q, y)
+        batch_loss = self.mse_loss(actions, y)
         batch_loss.backward()
         self.optimizer.step()
         batch_loss = batch_loss.item()
 
-        self.qnet.eval()
+        self.model.eval()
 
         return batch_loss
 
@@ -430,6 +580,7 @@ class EstimatorNetwork(nn.Module):
             s  (Tensor): (batch, state_shape)
         '''
         return self.fc_layers(s)
+
 
 class Memory(object):
     ''' Memory for saving transitions

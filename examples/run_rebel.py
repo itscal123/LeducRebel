@@ -37,7 +37,7 @@ def train(args):
     # Seed numpy, torch, random
     set_seed(args.seed)
 
-    # Initilize CFR Agent
+    # Initilize Rebel Agent
     agent = RebelAgent(
         env,
         os.path.join(
