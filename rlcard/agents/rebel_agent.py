@@ -7,6 +7,7 @@ import pickle
 import torch
 import torch.nn as nn
 
+from copy import deepcopy
 from collections import namedtuple
 from rlcard.utils.utils import *
 
@@ -22,8 +23,10 @@ class RebelAgent():
     def __init__(
         self, env, model_path='./rebel_model', 
         replay_memory_size=20000,
+        replay_memory_init_size=100,
         discount_factor=0.99,
         batch_size=32,
+        train_value_every=1,
         update_policy_every=1000,
         epsilon_start=1.0,
         epsilon_end=0.1,
@@ -47,6 +50,7 @@ class RebelAgent():
         '''
         self.use_raw = False
         self.num_actions = num_actions or env.num_actions
+        self.replay_memory_init_size = replay_memory_init_size
         self.env = env
         self.model_path = model_path
         self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
@@ -54,8 +58,9 @@ class RebelAgent():
         self.mlp_layers= mlp_layers or [64, 64]
         self.epsilon_decay_steps = epsilon_decay_steps
         self.batch_size = batch_size
-        self.discount_factor
+        self.discount_factor = discount_factor
         self.update_policy_every = update_policy_every
+        self.train_value_every = train_value_every
 
         # Total timesteps
         self.total_t = 0
@@ -134,7 +139,22 @@ class RebelAgent():
                 Add {β, π_bar(β)} to D_π 
             βr ← βr′
         """
-        #while not self.env.is_over():
+        self.train()
+
+        trajectories, payoffs = self.env.run(is_training=True)
+
+        # Reorganaize the data to be state, action, reward, next_state, done
+        trajectories = reorganize(trajectories, payoffs)
+
+        # Feed transitions into agent memory, and train the agent
+        # Here, we assume that DQN always plays the first position
+        # and the other players play randomly (if any)
+        for ts in trajectories[0]:
+            self.feed(ts)
+        
+        while not self.env.is_over():
+
+            break
         #    subgame = constructSubGame  # TODO
         #    # TODO: Initialize/implement policy networks
 
@@ -152,7 +172,7 @@ class RebelAgent():
         self.feed_memory(state['obs'], action, reward, next_state['obs'], list(next_state['legal_actions'].keys()), done)
         self.total_t += 1
         tmp = self.total_t - self.replay_memory_init_size
-        if tmp>=0 and tmp%self.train_every == 0:
+        if tmp>=0 and tmp%self.train_value_every == 0:
             self.trainValueNetwork()
 
 
@@ -206,7 +226,7 @@ class RebelAgent():
             state (numpy.array): current state
 
         Returns:
-            values (numpy.array): a 1-d array where each entry represents a Q value
+            values (numpy.array): a 1-d array where each entry represents values/policies
         '''
         
         values = self.valueNetwork.predict_nograd(np.expand_dims(state['obs'], 0))[0]
@@ -330,6 +350,7 @@ class RebelAgent():
             self.average_policy[obs][action] += self.iteration * player_prob * action_prob
         return state_utility
 
+
     def update_policy(self):
         ''' Update policy based on the current regrets
         '''
@@ -355,6 +376,7 @@ class RebelAgent():
                 action_probs[action] = 1.0 / self.env.num_actions
         return action_probs
 
+
     def action_probs(self, obs, legal_actions, policy):
         ''' Obtain the action probabilities of the current state
 
@@ -377,7 +399,8 @@ class RebelAgent():
         action_probs = remove_illegal(action_probs, legal_actions)
         return action_probs
 
-    def eval_step(self, state):
+
+    def eval_step2(self, state):
         ''' Given a state, predict action based on average policy
 
         Args:
@@ -395,6 +418,7 @@ class RebelAgent():
 
         return action, info
 
+
     def get_state(self, player_id):
         ''' Get state_str of the player
 
@@ -408,6 +432,7 @@ class RebelAgent():
         '''
         state = self.env.get_state(player_id)
         return state['obs'].tostring(), list(state['legal_actions'].keys())
+
 
     def save(self):
         ''' Save model
@@ -458,7 +483,6 @@ class Estimator(object):
     Estimator neural network.
     This network is used for both the value network and the policy network. All methods input/output np.ndarray.
     '''
-
     def __init__(self, num_actions=2, learning_rate=0.001, state_shape=None, mlp_layers=None, device=None):
         ''' Initilalize an Estimator object.
 
@@ -491,6 +515,7 @@ class Estimator(object):
         # set up optimizer
         self.optimizer =  torch.optim.Adam(self.model.parameters(), lr=self.learning_rate)
 
+
     def predict_nograd(self, s):
         ''' Predicts action values, but prediction is not included
             in the computation graph.  It is used to predict optimal next
@@ -507,6 +532,7 @@ class Estimator(object):
             s = torch.from_numpy(s).float().to(self.device)
             model_as = self.model(s).cpu().numpy()
         return model_as
+
 
     def update(self, s, a, y):
         ''' Updates the estimator towards the given targets.
@@ -573,6 +599,7 @@ class EstimatorNetwork(nn.Module):
         fc.append(nn.Linear(layer_dims[-1], self.num_actions, bias=True))
         self.fc_layers = nn.Sequential(*fc)
 
+
     def forward(self, s):
         ''' Predict action values
 
@@ -595,6 +622,7 @@ class Memory(object):
         self.batch_size = batch_size
         self.memory = []
 
+
     def save(self, state, action, reward, next_state, legal_actions, done):
         ''' Save transition into memory
 
@@ -610,6 +638,7 @@ class Memory(object):
             self.memory.pop(0)
         transition = Transition(state, action, reward, next_state, legal_actions, done)
         self.memory.append(transition)
+
 
     def sample(self):
         ''' Sample a minibatch from the replay memory

@@ -2,6 +2,9 @@
 '''
 import os
 import argparse
+import sys
+
+sys.path.append('../')
 
 import rlcard
 from rlcard.agents import (

@@ -48,7 +48,7 @@ def train(args):
     agent.load()  # If we have saved model, we first load the model
 
     # Evaluate Rebel against random
-    eval_env.set_agents([
+    env.set_agents([
         agent,
         RandomAgent(num_actions=env.num_actions),
     ])
@@ -56,7 +56,7 @@ def train(args):
     # Start training
     with Logger(args.log_dir) as logger:
         for episode in range(args.num_episodes):
-            agent.train()
+            agent.train2()
             print('\rIteration {}'.format(episode), end='')
             # Evaluate the performance. Play with Random agents.
             if episode % args.evaluate_every == 0:
@@ -64,7 +64,7 @@ def train(args):
                 logger.log_performance(
                     env.timestep,
                     tournament(
-                        eval_env,
+                        env,
                         args.num_eval_games
                     )[0]
                 )
@@ -99,7 +99,7 @@ if __name__ == '__main__':
     parser.add_argument(
         '--log_dir',
         type=str,
-        default='experiments/leduc_holdem_cfr_result/',
+        default='experiments/leduc_holdem_rebel_result/',
     )
 
     args = parser.parse_args()
