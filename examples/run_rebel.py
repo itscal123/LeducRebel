@@ -52,27 +52,32 @@ def train(args):
         agent,
         RandomAgent(num_actions=env.num_actions),
     ])
+    # Perform 10 runs
+    for i in range(1,11):
+        # Start training
+        log_dir = args.log_dir[:-1] + f'/run_{i}/'
+        env.timestep = 0
+        with Logger(log_dir) as logger:
+            for episode in range(args.num_episodes):
+                agent.train()
+                print('\rIteration {}'.format(episode), end='')
+                # Evaluate the performance. Play with Random agents.
+                if episode % args.evaluate_every == 0:
+                    agent.save() # Save model
+                    logger.log_performance(
+                        env.timestep,
+                        tournament(
+                            env,
+                            args.num_eval_games
+                        )[0]
+                    )
 
-    # Start training
-    with Logger(args.log_dir) as logger:
-        for episode in range(args.num_episodes):
-            agent.train2()
-            print('\rIteration {}'.format(episode), end='')
-            # Evaluate the performance. Play with Random agents.
-            if episode % args.evaluate_every == 0:
-                agent.save() # Save model
-                logger.log_performance(
-                    env.timestep,
-                    tournament(
-                        env,
-                        args.num_eval_games
-                    )[0]
-                )
+            # Get the paths
+            csv_path, fig_path = logger.csv_path, logger.fig_path
 
-        # Get the paths
-        csv_path, fig_path = logger.csv_path, logger.fig_path
-    # Plot the learning curve
-    plot_curve(csv_path, fig_path, 'rebel')
+        
+        # Plot the learning curve
+        plot_curve(csv_path, fig_path, 'rebel')
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser("Rebel example in RLCard")

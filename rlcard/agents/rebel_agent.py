@@ -55,7 +55,7 @@ class RebelAgent():
         self.model_path = model_path
         self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
         self.state_shape = state_shape or env.state_shape[0]
-        self.mlp_layers= mlp_layers or [64, 64]
+        self.mlp_layers= mlp_layers or [32, 32]
         self.epsilon_decay_steps = epsilon_decay_steps
         self.batch_size = batch_size
         self.discount_factor = discount_factor
@@ -100,8 +100,7 @@ class RebelAgent():
 
         self.iteration = 0
 
-    # TODO: rename
-    def train(self):
+    def CFR(self):
         ''' Do one iteration of CFR
         '''
         self.iteration += 1
@@ -110,51 +109,23 @@ class RebelAgent():
         for player_id in range(self.env.num_players):
             self.env.reset()
             probs = np.ones(self.env.num_players)
-            self.traverse_tree(probs, player_id)
+            utlity = self.traverse_tree(probs, player_id)
 
         # Update policy
         self.update_policy()
 
 
-    # TODO: Implement Rebel Logic from paper and rename
-    def train2(self):
-        """
-        Rebel algorithm for RL and Search for Imperfect-Information Games
-        Rough pseudocode:
-        while !ISTERMINAL(βr) do
-            G ← CONSTRUCTSUBGAME(βr)
-            π_bar, π_t_warm ← INITIALIZEPOLICY(G, θπ)
-            G ← SETLEAFVALUES(G, π _bar, π_t_warm , θv)
-            v(βr) ← COMPUTEEV(G, π_t_warm )
-            tsample ∼ unif {t_warm + 1, T }
-            for t = (t_warm + 1)..T do
-                if t = tsample then
-                    βr′ ←SAMPLELEAF(G,π_t − 1)
-                π_t UPDATEPOLICY(G, π_t − 1)
-                π_bar ← t π _bar + 1 π t
-                G ← SETLEAFVALUES(G, π_bar, π_t, θv)
-                v(βr)← t v(βr)+ 1 COMPUTEEV(G,π_t) t+1 t+1
-            Add {βr , v(βr )} to D_v 
-            for β ∈ G do
-                Add {β, π_bar(β)} to D_π 
-            βr ← βr′
-        """
-        self.train()
-
+    def train(self):
+        self.CFR()
         trajectories, payoffs = self.env.run(is_training=True)
 
         # Reorganaize the data to be state, action, reward, next_state, done
         trajectories = reorganize(trajectories, payoffs)
 
         # Feed transitions into agent memory, and train the agent
-        # Here, we assume that DQN always plays the first position
-        # and the other players play randomly (if any)
         for ts in trajectories[0]:
             self.feed(ts)
-        
-        
-
-
+    
     def feed(self, ts):
         ''' 
         Store data in to replay buffer and train the agent. There are two stages.
@@ -344,6 +315,8 @@ class RebelAgent():
                     - player_state_utility)
             self.regrets[obs][action] += regret
             self.average_policy[obs][action] += self.iteration * player_prob * action_prob
+        
+        
         return state_utility
 
 
