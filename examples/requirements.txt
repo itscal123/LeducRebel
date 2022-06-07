@@ -1,0 +1,4 @@
+matplotlib==3.4.2
+numpy==1.19.5
+rlcard==1.0.7
+torch==1.11.0
