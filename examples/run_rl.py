@@ -2,6 +2,9 @@
 '''
 import os
 import argparse
+import sys
+
+sys.path.append('../')
 
 import torch
 
@@ -9,27 +12,21 @@ import rlcard
 from rlcard.agents import RandomAgent
 from rlcard.utils import (
     get_device,
-    set_seed,
     tournament,
     reorganize,
     Logger,
     plot_curve,
 )
 
-def train(args):
+def train(args, i):
 
     # Check whether gpu is available
     device = get_device()
         
-    # Seed numpy, torch, random
-    set_seed(args.seed)
 
     # Make the environment with seed
     env = rlcard.make(
         args.env,
-        config={
-            'seed': args.seed,
-        }
     )
 
     # Initialize the agent and use random agents as opponents
@@ -56,7 +53,8 @@ def train(args):
     env.set_agents(agents)
 
     # Start training
-    with Logger(args.log_dir) as logger:
+    log_dir = args.log_dir[:-1] + f'/run_{i}/'
+    with Logger(log_dir) as logger:
         for episode in range(args.num_episodes):
 
             if args.algorithm == 'nfsp':
@@ -135,7 +133,7 @@ if __name__ == '__main__':
     parser.add_argument(
         '--num_episodes',
         type=int,
-        default=5000,
+        default=15000,
     )
     parser.add_argument(
         '--num_eval_games',
@@ -156,5 +154,8 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     os.environ["CUDA_VISIBLE_DEVICES"] = args.cuda
-    train(args)
+    
+    # Perform 10 runs
+    for i in range(1,11):
+        train(args, i)
 

@@ -12,30 +12,23 @@ from rlcard.agents import (
     RandomAgent,
 )
 from rlcard.utils import (
-    set_seed,
     tournament,
     Logger,
     plot_curve,
 )
 
-def train(args):
+def train(args, i):
     # Make environments, CFR only supports Leduc Holdem
     env = rlcard.make(
         'leduc-holdem',
         config={
-            'seed': 0,
             'allow_step_back': True,
         }
     )
     eval_env = rlcard.make(
         'leduc-holdem',
-        config={
-            'seed': 0,
-        }
     )
 
-    # Seed numpy, torch, random
-    set_seed(args.seed)
 
     # Initilize CFR Agent
     agent = CFRAgent(
@@ -45,38 +38,36 @@ def train(args):
             'cfr_model',
         ),
     )
-    agent.load()  # If we have saved model, we first load the model
 
     # Evaluate CFR against random
     eval_env.set_agents([
         agent,
         RandomAgent(num_actions=env.num_actions),
     ])
-    # Perform 10 runs
-    for i in range(1,11):
-        # Start training
-        log_dir = args.log_dir[:-1] + f'/run_{i}/'
-        env.timestep = 0
-        # Start training
-        with Logger(log_dir) as logger:
-            for episode in range(args.num_episodes):
-                agent.train()
-                print('\rIteration {}'.format(episode), end='')
-                # Evaluate the performance. Play with Random agents.
-                if episode % args.evaluate_every == 0:
-                    agent.save() # Save model
-                    logger.log_performance(
-                        env.timestep,
-                        tournament(
-                            eval_env,
-                            args.num_eval_games
-                        )[0]
-                    )
 
-            # Get the paths
-            csv_path, fig_path = logger.csv_path, logger.fig_path
-        # Plot the learning curve
-        plot_curve(csv_path, fig_path, 'cfr')
+    # Start training
+    log_dir = args.log_dir[:-1] + f'/run_{i}/'
+    env.timestep = 0
+    # Start training
+    with Logger(log_dir) as logger:
+        for episode in range(args.num_episodes):
+            agent.train()
+            print('\rIteration {}'.format(episode), end='')
+            # Evaluate the performance. Play with Random agents.
+            if episode % args.evaluate_every == 0:
+                agent.save() # Save model
+                logger.log_performance(
+                    env.timestep,
+                    tournament(
+                        eval_env,
+                        args.num_eval_games
+                    )[0]
+                )
+
+        # Get the paths
+        csv_path, fig_path = logger.csv_path, logger.fig_path
+    # Plot the learning curve
+    plot_curve(csv_path, fig_path, 'cfr')
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser("CFR example in RLCard")
@@ -108,5 +99,6 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    train(args)
+    for i in range(1,11):
+        train(args,i)
     

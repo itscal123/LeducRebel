@@ -11,23 +11,17 @@ import rlcard
 from rlcard.agents import RandomAgent
 
 from rlcard.utils import (
-    set_seed,
     tournament,
     Logger,
     plot_curve,
 )
 
-def run(args):
+def run(args, i):
     # Make environment
     env = rlcard.make(
         args.env,
-        config={
-            'seed': 42,
-        }
     )
 
-    # Seed numpy, torch, random
-    set_seed(42)
 
     # Initialize random agent
     agent = RandomAgent(num_actions=env.num_actions)
@@ -53,29 +47,27 @@ def run(args):
         RandomAgent(num_actions=env.num_actions),
     ])
 
-    # Perform 10 runs
-    for i in range(1,11):
-        # Start training
-        log_dir = args.log_dir[:-1] + f'/run_{i}/'
-        env.timestep = 0
-        with Logger(log_dir) as logger:
-            for episode in range(args.num_episodes):
-                print('\rIteration {}'.format(episode), end='')
-                # Evaluate the performance. Play with Random agents.
-                if episode % args.evaluate_every == 0:
-                    logger.log_performance(
-                        env.timestep,
-                        tournament(
-                            env,
-                            args.num_eval_games
-                        )[0]
-                    )
+    # Start training
+    log_dir = args.log_dir[:-1] + f'/run_{i}/'
+    env.timestep = 0
+    with Logger(log_dir) as logger:
+        for episode in range(args.num_episodes):
+            print('\rIteration {}'.format(episode), end='')
+            # Evaluate the performance. Play with Random agents.
+            if episode % args.evaluate_every == 0:
+                logger.log_performance(
+                    env.timestep,
+                    tournament(
+                        env,
+                        args.num_eval_games
+                    )[0]
+                )
 
-            # Get the paths
-            csv_path, fig_path = logger.csv_path, logger.fig_path
+        # Get the paths
+        csv_path, fig_path = logger.csv_path, logger.fig_path
 
-        # Plot the learning curve
-        plot_curve(csv_path, fig_path, 'random')
+    # Plot the learning curve
+    plot_curve(csv_path, fig_path, 'random')
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser("Random example in RLCard")
@@ -119,5 +111,5 @@ if __name__ == '__main__':
 
 
     args = parser.parse_args()
-
-    run(args)
+    for i in range(1,11):
+        run(args,i)
